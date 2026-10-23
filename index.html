@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dziennik Kame Gym</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#14224A">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Kame Gym">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<style>
+  html,body{margin:0;height:100%;background:#14224A;color:#F4F6FB;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  #splash{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;box-sizing:border-box;text-align:center}
+  .mark{font-weight:800;font-style:italic;font-size:34px;letter-spacing:.02em;color:#E8901F}
+  #msg{color:#A9B4D0;font-size:15px;max-width:320px;line-height:1.45}
+  #retry{font:inherit;font-weight:700;border:0;border-radius:12px;padding:12px 20px;background:#E8901F;color:#1A1103;cursor:pointer}
+  .dots::after{content:"";animation:d 1.2s steps(4) infinite}
+  @keyframes d{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+</style>
+</head>
+<body>
+<div id="splash">
+  <div class="mark">KAME GYM</div>
+  <div id="msg"><span class="dots">Wczytuję dziennik</span></div>
+  <button id="retry" type="button" hidden>Spróbuj ponownie</button>
+</div>
+<script>
+/* Dziennik Kame Gym – apka do zainstalowania (PWA).
+   Ta strona to tylko „skorupka”: ikona, instalacja, wczytywanie. Sam dziennik (wygląd i dane)
+   przychodzi z Apps Script, więc aktualizacje robi się jak dotąd – wklejając kod w edytorze. */
+(function () {
+  'use strict';
+  var API = 'https://script.google.com/macros/s/AKfycbweG4JNA4EW-5S4G5bug5kI2-iCx3Mhcx-RG_-ovUqdPiga0KV_WOYXOeZdjpz3KCoI/exec';
+  var KEY = 'kg.ui';
+  var HEAD = '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">' +
+    '<link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#14224A">' +
+    '<link rel="icon" type="image/png" href="favicon.png"><link rel="apple-touch-icon" href="apple-touch-icon.png">' +
+    '<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">' +
+    '<meta name="apple-mobile-web-app-title" content="Kame Gym"><meta name="apple-mobile-web-app-status-bar-style" content="black">' +
+    '<script>window.KAME_API=' + JSON.stringify(API) + ';window.KAME_SHELL=1;' +
+    'if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").catch(function(){});}<\/script>';
+
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function valid(html) { return typeof html === 'string' && html.indexOf('id="v-today"') > 0 && /<head[^>]*>/i.test(html); }
+
+  // PIN z linku (?pin=1234) – przekazujemy do apki i od razu usuwamy z paska adresu
+  var pin = '';
+  try {
+    var q = new URLSearchParams(location.search);
+    pin = String(q.get('pin') || '').replace(/\D/g, '').slice(0, 12);
+    if (pin) history.replaceState(null, '', location.pathname + location.hash);
+  } catch (e) {}
+
+  var started = false;
+  function boot(html) {
+    if (started) return; started = true;
+    html = html.replace(/<head[^>]*>/i, function (m) { return m + HEAD; });
+    if (pin) html = html.replace('var PIN_FROM_LINK = "";', 'var PIN_FROM_LINK = ' + JSON.stringify(pin) + ';');
+    document.open(); document.write(html); document.close();
+  }
+  function fail() {
+    document.getElementById('msg').textContent = 'Nie udało się wczytać dziennika. Sprawdź internet i spróbuj ponownie.';
+    document.getElementById('retry').hidden = false;
+  }
+  function fresh() {
+    return fetch(API + '?ui=1&t=' + Date.now(), { redirect: 'follow', cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(function (html) { if (!valid(html)) throw new Error('BAD_UI'); lsSet(KEY, html); return html; });
+  }
+  function start() {
+    started = false;
+    document.getElementById('retry').hidden = true;
+    var cached = lsGet(KEY);
+    var p = fresh();
+    if (valid(cached)) {
+      // jest zapisana wersja: czekamy na świeżą najwyżej 4 s, potem startujemy z zapisanej (świeża zapisze się na następny raz)
+      var t = setTimeout(function () { boot(cached); }, 4000);
+      p.then(function (html) { clearTimeout(t); boot(html); }, function () { clearTimeout(t); boot(cached); });
+    } else {
+      p.then(boot, fail);
+    }
+  }
+  document.getElementById('retry').addEventListener('click', start);
+  start();
+})();
+</script>
+</body>
+</html>
